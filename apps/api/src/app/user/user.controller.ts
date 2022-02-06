@@ -83,8 +83,10 @@ export class UserController {
       }
     }
 
+    const hasAdmin = await this.userService.hasAdmin();
+
     const { accessToken, id } = await this.userService.createUser({
-      provider: Provider.ANONYMOUS
+      role: hasAdmin ? 'USER' : 'ADMIN'
     });
 
     return {
@@ -114,6 +116,12 @@ export class UserController {
       ...(<UserSettings>this.request.user.Settings.settings),
       ...data
     };
+
+    for (const key in userSettings) {
+      if (userSettings[key] === false) {
+        delete userSettings[key];
+      }
+    }
 
     return await this.userService.updateUserSetting({
       userSettings,

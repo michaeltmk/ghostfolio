@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { CreateAccessDto } from '@ghostfolio/api/app/access/create-access.dto';
 import { CreateAccountDto } from '@ghostfolio/api/app/account/create-account.dto';
@@ -18,7 +18,6 @@ import {
   Accounts,
   AdminData,
   AdminMarketData,
-  AdminMarketDataDetails,
   Export,
   InfoItem,
   PortfolioChart,
@@ -69,19 +68,6 @@ export class DataService {
     return this.http.get<AdminMarketData>('/api/admin/market-data');
   }
 
-  public fetchAdminMarketDataBySymbol(
-    aSymbol: string
-  ): Observable<AdminMarketDataDetails> {
-    return this.http.get<any>(`/api/admin/market-data/${aSymbol}`).pipe(
-      map((data) => {
-        for (const item of data.marketData) {
-          item.date = parseISO(item.date);
-        }
-        return data;
-      })
-    );
-  }
-
   public deleteAccess(aId: string) {
     return this.http.delete<any>(`/api/access/${aId}`);
   }
@@ -108,8 +94,16 @@ export class DataService {
     });
   }
 
-  public fetchExport() {
-    return this.http.get<Export>('/api/export');
+  public fetchExport(activityIds?: string[]) {
+    let params = new HttpParams();
+
+    if (activityIds) {
+      params = params.append('activityIds', activityIds.join(','));
+    }
+
+    return this.http.get<Export>('/api/export', {
+      params
+    });
   }
 
   public fetchInfo(): InfoItem {
@@ -138,15 +132,21 @@ export class DataService {
 
   public fetchSymbolItem({
     dataSource,
-    includeHistoricalData = false,
+    includeHistoricalData,
     symbol
   }: {
-    dataSource: DataSource;
-    includeHistoricalData?: boolean;
+    dataSource: DataSource | string;
+    includeHistoricalData?: number;
     symbol: string;
   }) {
+    let params = new HttpParams();
+
+    if (includeHistoricalData) {
+      params = params.append('includeHistoricalData', includeHistoricalData);
+    }
+
     return this.http.get<SymbolItem>(`/api/symbol/${dataSource}/${symbol}`, {
-      params: { includeHistoricalData }
+      params
     });
   }
 
@@ -219,19 +219,27 @@ export class DataService {
     );
   }
 
-  public fetchPositionDetail(aSymbol: string) {
-    return this.http.get<any>(`/api/portfolio/position/${aSymbol}`).pipe(
-      map((data) => {
-        if (data.orders) {
-          for (const order of data.orders) {
-            order.createdAt = parseISO(order.createdAt);
-            order.date = parseISO(order.date);
+  public fetchPositionDetail({
+    dataSource,
+    symbol
+  }: {
+    dataSource: DataSource;
+    symbol: string;
+  }) {
+    return this.http
+      .get<any>(`/api/portfolio/position/${dataSource}/${symbol}`)
+      .pipe(
+        map((data) => {
+          if (data.orders) {
+            for (const order of data.orders) {
+              order.createdAt = parseISO(order.createdAt);
+              order.date = parseISO(order.date);
+            }
           }
-        }
 
-        return data;
-      })
-    );
+          return data;
+        })
+      );
   }
 
   public loginAnonymous(accessToken: string) {

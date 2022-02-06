@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Added the export functionality to the position detail dialog
+
+### Changed
+
+- Improved the export functionality for activities (respect filtering)
+- Removed the _Admin_ user from the database seeding
+- Assigned the role `ADMIN` on sign up (only if there is no admin yet)
+
+### Todo
+
+- Apply data migration (`yarn database:migrate`)
+
+## 1.111.0 - 03.02.2022
+
+### Added
+
+- Added support for deleting symbol profile data in the admin control panel
+
+### Changed
+
+- Used `dataSource` and `symbol` from `SymbolProfile` instead of the `order` object (in `ExportService` and `PortfolioService`)
+
+### Fixed
+
+- Fixed the symbol selection of the 7d data gathering
+
+## 1.110.0 - 02.02.2022
+
+### Fixed
+
+- Fixed the data source of the _Fear & Greed Index_ (market mood)
+
+### Todo
+
+- Apply data migration (`yarn database:migrate`)
+
+## 1.109.0 - 01.02.2022
+
+### Added
+
+- Added support for the (optional) `accountId` in the import functionality for activities
+- Added support for the (optional) `dataSource` in the import functionality for activities
+- Added support for the data source transformation
+- Added support for the cryptocurrency _Mina Protocol_ (`MINA-USD`)
+
+### Changed
+
+- Improved the usability of the form in the create or edit transaction dialog
+- Improved the consistent use of `symbol` in combination with `dataSource`
+- Removed the primary data source from the client
+
+### Removed
+
+- Removed the unused endpoint `GET api/order/:id`
+
+## 1.108.0 - 27.01.2022
+
+### Changed
+
+- Improved the annualized performance in the new calculation engine
+- Increased the historical data chart of the _Fear & Greed Index_ (market mood) to 90 days
+
+## 1.107.0 - 24.01.2022
+
+### Added
+
+- Added a new calculation engine (experimental)
+
 ### Fixed
 
 - Fixed the styling in the footer row of the activities table
@@ -189,7 +259,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added support for cryptocurrency _Solana_ (`SOL-USD`)
+- Added support for the cryptocurrency _Solana_ (`SOL-USD`)
 - Extended the documentation for self-hosting with the [official Ghostfolio Docker image](https://hub.docker.com/r/ghostfolio/ghostfolio)
 
 ### Fixed

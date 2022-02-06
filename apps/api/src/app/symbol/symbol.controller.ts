@@ -1,17 +1,15 @@
+import { TransformDataSourceInRequestInterceptor } from '@ghostfolio/api/interceptors/transform-data-source-in-request.interceptor';
+import { TransformDataSourceInResponseInterceptor } from '@ghostfolio/api/interceptors/transform-data-source-in-response.interceptor';
 import { IDataProviderHistoricalResponse } from '@ghostfolio/api/services/interfaces/interfaces';
-import type { RequestWithUser } from '@ghostfolio/common/types';
 import {
   Controller,
-  DefaultValuePipe,
   Get,
   HttpException,
-  Inject,
   Param,
-  ParseBoolPipe,
   Query,
-  UseGuards
+  UseGuards,
+  UseInterceptors
 } from '@nestjs/common';
-import { REQUEST } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { DataSource } from '@prisma/client';
 import { StatusCodes, getReasonPhrase } from 'http-status-codes';
@@ -23,16 +21,14 @@ import { SymbolService } from './symbol.service';
 
 @Controller('symbol')
 export class SymbolController {
-  public constructor(
-    private readonly symbolService: SymbolService,
-    @Inject(REQUEST) private readonly request: RequestWithUser
-  ) {}
+  public constructor(private readonly symbolService: SymbolService) {}
 
   /**
    * Must be before /:symbol
    */
   @Get('lookup')
   @UseGuards(AuthGuard('jwt'))
+  @UseInterceptors(TransformDataSourceInResponseInterceptor)
   public async lookupSymbol(
     @Query() { query = '' }
   ): Promise<{ items: LookupItem[] }> {
@@ -51,11 +47,12 @@ export class SymbolController {
    */
   @Get(':dataSource/:symbol')
   @UseGuards(AuthGuard('jwt'))
+  @UseInterceptors(TransformDataSourceInRequestInterceptor)
+  @UseInterceptors(TransformDataSourceInResponseInterceptor)
   public async getSymbolData(
     @Param('dataSource') dataSource: DataSource,
     @Param('symbol') symbol: string,
-    @Query('includeHistoricalData', new DefaultValuePipe(false), ParseBoolPipe)
-    includeHistoricalData: boolean
+    @Query('includeHistoricalData') includeHistoricalData?: number
   ): Promise<SymbolItem> {
     if (!DataSource[dataSource]) {
       throw new HttpException(

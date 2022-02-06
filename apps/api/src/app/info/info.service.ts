@@ -1,7 +1,6 @@
 import { RedisCacheService } from '@ghostfolio/api/app/redis-cache/redis-cache.service';
 import { ConfigurationService } from '@ghostfolio/api/services/configuration.service';
 import { DataGatheringService } from '@ghostfolio/api/services/data-gathering.service';
-import { DataProviderService } from '@ghostfolio/api/services/data-provider/data-provider.service';
 import { ExchangeRateDataService } from '@ghostfolio/api/services/exchange-rate-data.service';
 import { PrismaService } from '@ghostfolio/api/services/prisma.service';
 import { PropertyService } from '@ghostfolio/api/services/property/property.service';
@@ -12,12 +11,14 @@ import {
   PROPERTY_STRIPE_CONFIG,
   PROPERTY_SYSTEM_MESSAGE
 } from '@ghostfolio/common/config';
+import { encodeDataSource } from '@ghostfolio/common/helper';
 import { InfoItem } from '@ghostfolio/common/interfaces';
 import { Statistics } from '@ghostfolio/common/interfaces/statistics.interface';
 import { Subscription } from '@ghostfolio/common/interfaces/subscription.interface';
 import { permissions } from '@ghostfolio/common/permissions';
 import { Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { DataSource } from '@prisma/client';
 import * as bent from 'bent';
 import { subDays } from 'date-fns';
 
@@ -27,7 +28,6 @@ export class InfoService {
 
   public constructor(
     private readonly configurationService: ConfigurationService,
-    private readonly dataProviderService: DataProviderService,
     private readonly exchangeRateDataService: ExchangeRateDataService,
     private readonly dataGatheringService: DataGatheringService,
     private readonly jwtService: JwtService,
@@ -49,6 +49,10 @@ export class InfoService {
 
     if (this.configurationService.get('ENABLE_FEATURE_BLOG')) {
       globalPermissions.push(permissions.enableBlog);
+    }
+
+    if (this.configurationService.get('ENABLE_FEATURE_FEAR_AND_GREED_INDEX')) {
+      info.fearAndGreedDataSource = encodeDataSource(DataSource.RAKUTEN);
     }
 
     if (this.configurationService.get('ENABLE_FEATURE_IMPORT')) {
@@ -92,7 +96,6 @@ export class InfoService {
       currencies: this.exchangeRateDataService.getCurrencies(),
       demoAuthToken: this.getDemoAuthToken(),
       lastDataGathering: await this.getLastDataGathering(),
-      primaryDataSource: this.dataProviderService.getPrimaryDataSource(),
       statistics: await this.getStatistics(),
       subscriptions: await this.getSubscriptions()
     };

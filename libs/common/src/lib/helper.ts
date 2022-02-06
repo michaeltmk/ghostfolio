@@ -1,10 +1,33 @@
 import * as currencies from '@dinero.js/currencies';
+import { DataSource } from '@prisma/client';
 import { getDate, getMonth, getYear, parse, subDays } from 'date-fns';
 
 import { ghostfolioScraperApiSymbolPrefix } from './config';
 
 export function capitalize(aString: string) {
   return aString.charAt(0).toUpperCase() + aString.slice(1).toLowerCase();
+}
+
+export function decodeDataSource(encodedDataSource: string) {
+  return Buffer.from(encodedDataSource, 'hex').toString();
+}
+
+export function downloadAsFile(
+  aContent: unknown,
+  aFileName: string,
+  aContentType: string
+) {
+  const a = document.createElement('a');
+  const file = new Blob([JSON.stringify(aContent, undefined, '  ')], {
+    type: aContentType
+  });
+  a.href = URL.createObjectURL(file);
+  a.download = aFileName;
+  a.click();
+}
+
+export function encodeDataSource(aDataSource: DataSource) {
+  return Buffer.from(aDataSource, 'utf-8').toString('hex');
 }
 
 export function getBackgroundColor() {

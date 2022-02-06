@@ -10,6 +10,7 @@ import { DataService } from '@ghostfolio/client/services/data.service';
 import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import { ImportTransactionsService } from '@ghostfolio/client/services/import-transactions.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
+import { downloadAsFile } from '@ghostfolio/common/helper';
 import { User } from '@ghostfolio/common/interfaces';
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
 import { DataSource, Order as OrderModel } from '@prisma/client';
@@ -39,7 +40,6 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
   public routeQueryParams: Subscription;
   public user: User;
 
-  private primaryDataSource: DataSource;
   private unsubscribeSubject = new Subject<void>();
 
   /**
@@ -57,9 +57,6 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
     private snackBar: MatSnackBar,
     private userService: UserService
   ) {
-    const { primaryDataSource } = this.dataService.fetchInfo();
-    this.primaryDataSource = primaryDataSource;
-
     this.routeQueryParams = route.queryParams
       .pipe(takeUntil(this.unsubscribeSubject))
       .subscribe((params) => {
@@ -75,8 +72,13 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
           } else {
             this.router.navigate(['.'], { relativeTo: this.route });
           }
-        } else if (params['positionDetailDialog'] && params['symbol']) {
+        } else if (
+          params['dataSource'] &&
+          params['positionDetailDialog'] &&
+          params['symbol']
+        ) {
           this.openPositionDialog({
+            dataSource: params['dataSource'],
             symbol: params['symbol']
           });
         }
@@ -89,11 +91,6 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
   public ngOnInit() {
     const { globalPermissions } = this.dataService.fetchInfo();
 
-    this.hasPermissionToImportOrders = hasPermission(
-      globalPermissions,
-      permissions.enableImport
-    );
-
     this.deviceType = this.deviceService.getDeviceInfo().deviceType;
 
     this.impersonationStorageService
@@ -101,6 +98,10 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
       .pipe(takeUntil(this.unsubscribeSubject))
       .subscribe((aId) => {
         this.hasImpersonationId = !!aId;
+
+        this.hasPermissionToImportOrders =
+          hasPermission(globalPermissions, permissions.enableImport) &&
+          !this.hasImpersonationId;
       });
 
     this.userService.stateChanged
@@ -146,12 +147,12 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
       });
   }
 
-  public onExport() {
+  public onExport(activityIds?: string[]) {
     this.dataService
-      .fetchExport()
+      .fetchExport(activityIds)
       .pipe(takeUntil(this.unsubscribeSubject))
       .subscribe((data) => {
-        this.downloadAsFile(
+        downloadAsFile(
           data,
           `ghostfolio-export-${format(
             parseISO(data.meta.date),
@@ -190,8 +191,7 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
 
             try {
               await this.importTransactionsService.importJson({
-                content: content.orders,
-                defaultAccountId: this.defaultAccountId
+                content: content.orders
               });
 
               this.handleImportSuccess();
@@ -205,8 +205,7 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
             try {
               await this.importTransactionsService.importCsv({
                 fileContent,
-                defaultAccountId: this.defaultAccountId,
-                primaryDataSource: this.primaryDataSource
+                userAccounts: this.user.accounts
               });
 
               this.handleImportSuccess();
@@ -304,20 +303,6 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
     this.unsubscribeSubject.complete();
   }
 
-  private downloadAsFile(
-    aContent: unknown,
-    aFileName: string,
-    aContentType: string
-  ) {
-    const a = document.createElement('a');
-    const file = new Blob([JSON.stringify(aContent, undefined, '  ')], {
-      type: aContentType
-    });
-    a.href = URL.createObjectURL(file);
-    a.download = aFileName;
-    a.click();
-  }
-
   private handleImportError({ error, orders }: { error: any; orders: any[] }) {
     this.snackBar.dismiss();
 
@@ -387,7 +372,13 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
       });
   }
 
-  private openPositionDialog({ symbol }: { symbol: string }) {
+  private openPositionDialog({
+    dataSource,
+    symbol
+  }: {
+    dataSource: DataSource;
+    symbol: string;
+  }) {
     this.userService
       .get()
       .pipe(takeUntil(this.unsubscribeSubject))
@@ -397,9 +388,11 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
         const dialogRef = this.dialog.open(PositionDetailDialog, {
           autoFocus: false,
           data: {
+            dataSource,
             symbol,
             baseCurrency: this.user?.settings?.baseCurrency,
             deviceType: this.deviceType,
+            hasImpersonationId: this.hasImpersonationId,
             locale: this.user?.settings?.locale
           },
           height: this.deviceType === 'mobile' ? '97.5vh' : '80vh',
