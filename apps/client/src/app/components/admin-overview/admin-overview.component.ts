@@ -5,7 +5,6 @@ import { CacheService } from '@ghostfolio/client/services/cache.service';
 import { DataService } from '@ghostfolio/client/services/data.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import {
-  DEFAULT_DATE_FORMAT,
   PROPERTY_COUPONS,
   PROPERTY_CURRENCIES,
   PROPERTY_IS_READ_ONLY_MODE,
@@ -20,6 +19,7 @@ import {
   parseISO
 } from 'date-fns';
 import { uniq } from 'lodash';
+import { StringValue } from 'ms';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 
@@ -29,11 +29,11 @@ import { takeUntil } from 'rxjs/operators';
   templateUrl: './admin-overview.html'
 })
 export class AdminOverviewComponent implements OnDestroy, OnInit {
+  public couponDuration: StringValue = '30 days';
   public coupons: Coupon[];
   public customCurrencies: string[];
   public dataGatheringInProgress: boolean;
   public dataGatheringProgress: number;
-  public defaultDateFormat = DEFAULT_DATE_FORMAT;
   public exchangeRates: { label1: string; label2: string; value: number }[];
   public hasPermissionForSubscription: boolean;
   public hasPermissionForSystemMessage: boolean;
@@ -105,7 +105,10 @@ export class AdminOverviewComponent implements OnDestroy, OnInit {
   }
 
   public onAddCoupon() {
-    const coupons = [...this.coupons, { code: this.generateCouponCode(16) }];
+    const coupons = [
+      ...this.coupons,
+      { code: this.generateCouponCode(16), duration: this.couponDuration }
+    ];
     this.putCoupons(coupons);
   }
 
@@ -116,6 +119,10 @@ export class AdminOverviewComponent implements OnDestroy, OnInit {
       const currencies = uniq([...this.customCurrencies, currency]);
       this.putCurrencies(currencies);
     }
+  }
+
+  public onChangeCouponDuration(aCouponDuration: StringValue) {
+    this.couponDuration = aCouponDuration;
   }
 
   public onDeleteCoupon(aCouponCode: string) {

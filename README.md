@@ -41,21 +41,13 @@ If you prefer to run Ghostfolio on your own infrastructure (self-hosting), pleas
 Ghostfolio is for you if you are...
 
 - 💼 trading stocks, ETFs or cryptocurrencies on multiple platforms
-
 - 🏦 pursuing a buy & hold strategy
-
 - 🎯 interested in getting insights of your portfolio composition
-
 - 👻 valuing privacy and data ownership
-
 - 🧘 into minimalism
-
 - 🧺 caring about diversifying your financial resources
-
 - 🆓 interested in financial independence
-
 - 🙅 saying no to spreadsheets in 2021
-
 - 😎 still reading this list
 
 ## Features
@@ -65,6 +57,7 @@ Ghostfolio is for you if you are...
 - ✅ Portfolio performance: Time-weighted rate of return (TWR) for `Today`, `YTD`, `1Y`, `5Y`, `Max`
 - ✅ Various charts
 - ✅ Static analysis to identify potential risks in your portfolio
+- ✅ Import and export transactions
 - ✅ Dark Mode
 - ✅ Zen Mode
 - ✅ Mobile-first design
@@ -86,13 +79,14 @@ The frontend is built with [Angular](https://angular.io) and uses [Angular Mater
 ### Prerequisites
 
 - [Docker](https://www.docker.com/products/docker-desktop)
+- A local copy of this Git repository (clone)
 
 ### a. Run environment
 
 Run the following command to start the Docker images from [Docker Hub](https://hub.docker.com/r/ghostfolio/ghostfolio):
 
 ```bash
-docker-compose -f docker/docker-compose.yml up
+docker-compose -f docker/docker-compose.yml up -d
 ```
 
 #### Setup Database
@@ -109,7 +103,7 @@ Run the following commands to build and start the Docker images:
 
 ```bash
 docker-compose -f docker/docker-compose.build.yml build
-docker-compose -f docker/docker-compose.build.yml up
+docker-compose -f docker/docker-compose.build.yml up -d
 ```
 
 #### Setup Database
@@ -128,13 +122,11 @@ Open http://localhost:3333 in your browser and accomplish these steps:
 1. Go to the _Admin Control Panel_ and click _Gather All Data_ to fetch historical data
 1. Click _Sign out_ and check out the _Live Demo_
 
-### Migrate Database
+### Upgrade Version
 
-With the following command you can keep your database schema in sync after a Ghostfolio version update:
-
-```bash
-docker-compose -f docker/docker-compose-build-local.yml exec ghostfolio yarn database:migrate
-```
+1. Increase the version of the `ghostfolio/ghostfolio` Docker image in `docker/docker-compose.yml`
+1. Run the following command to start the new Docker image: `docker-compose -f docker/docker-compose.yml up -d`
+1. Then, run the following command to keep your database schema in sync: `docker-compose -f docker/docker-compose.yml exec ghostfolio yarn database:migrate`
 
 ## Development
 
@@ -143,6 +135,7 @@ docker-compose -f docker/docker-compose-build-local.yml exec ghostfolio yarn dat
 - [Docker](https://www.docker.com/products/docker-desktop)
 - [Node.js](https://nodejs.org/en/download) (version 14+)
 - [Yarn](https://yarnpkg.com/en/docs/install)
+- A local copy of this Git repository (clone)
 
 ### Setup
 
@@ -169,15 +162,91 @@ Run `yarn start:client`
 
 Run `yarn start:storybook`
 
+### Migrate Database
+
+With the following command you can keep your database schema in sync:
+
+```bash
+yarn database:push
+```
+
 ## Testing
 
 Run `yarn test`
+
+## Public API (experimental)
+
+### Import Activities
+
+#### Request
+
+`POST http://localhost:3333/api/v1/import`
+
+#### Authorization: Bearer Token
+
+Set the header as follows:
+
+```
+"Authorization": "Bearer eyJh..."
+```
+
+#### Body
+
+```
+{
+  "activities": [
+    {
+      "currency": "USD",
+      "dataSource": "YAHOO",
+      "date": "2021-09-15T00:00:00.000Z",
+      "fee": 19,
+      "quantity": 5,
+      "symbol": "MSFT"
+      "type": "BUY",
+      "unitPrice": 298.58
+    }
+  ]
+}
+```
+
+| Field      | Type                | Description                                        |
+| ---------- | ------------------- | -------------------------------------------------- |
+| accountId  | string (`optional`) | Id of the account                                  |
+| currency   | string              | `CHF` \| `EUR` \| `USD` etc.                       |
+| dataSource | string              | `MANUAL` (for type `ITEM`) \| `YAHOO`              |
+| date       | string              | Date in the format `ISO-8601`                      |
+| fee        | number              | Fee of the activity                                |
+| quantity   | number              | Quantity of the activity                           |
+| symbol     | string              | Symbol of the activity (suitable for `dataSource`) |
+| type       | string              | `BUY` \| `DIVIDEND` \| `ITEM` \| `SELL`            |
+| unitPrice  | number              | Price per unit of the activity                     |
+
+#### Response
+
+##### Success
+
+`201 Created`
+
+##### Error
+
+`400 Bad Request`
+
+```
+{
+  "error": "Bad Request",
+  "message": [
+    "activities.1 is a duplicate activity"
+  ]
+}
+```
 
 ## Contributing
 
 Ghostfolio is **100% free** and **open source**. We encourage and support an active and healthy community that accepts contributions from the public - including you.
 
 Not sure what to work on? We have got some ideas. Please join the Ghostfolio [Slack channel](https://join.slack.com/t/ghostfolio/shared_invite/zt-vsaan64h-F_I0fEo5M0P88lP9ibCxFg), tweet to [@ghostfolio\_](https://twitter.com/ghostfolio_) or send an e-mail to hi@ghostfol.io. We would love to hear from you.
+
+If you like to support this project, get **[Ghostfolio Premium](https://ghostfol.io/pricing)** or **[Buy me a coffee](https://www.buymeacoffee.com/ghostfolio)**.
 
 ## License
 

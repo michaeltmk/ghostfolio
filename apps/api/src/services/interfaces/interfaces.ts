@@ -1,17 +1,10 @@
+import { MarketState } from '@ghostfolio/common/types';
 import {
   Account,
-  AssetClass,
-  AssetSubClass,
   DataSource,
   SymbolProfile,
   Type as TypeOfOrder
 } from '@prisma/client';
-
-export const MarketState = {
-  closed: 'closed',
-  delayed: 'delayed',
-  open: 'open'
-};
 
 export interface IOrder {
   account: Account;
@@ -33,19 +26,10 @@ export interface IDataProviderHistoricalResponse {
 }
 
 export interface IDataProviderResponse {
-  assetClass?: AssetClass;
-  assetSubClass?: AssetSubClass;
-  countries?: { code: string; weight: number }[];
   currency: string;
   dataSource: DataSource;
-  exchange?: string;
-  marketChange?: number;
-  marketChangePercent?: number;
   marketPrice: number;
   marketState: MarketState;
-  name?: string;
-  sectors?: { name: string; weight: number }[];
-  url?: string;
 }
 
 export interface IDataGatheringItem {
@@ -53,5 +37,3 @@ export interface IDataGatheringItem {
   date?: Date;
   symbol: string;
 }
-
-export type MarketState = typeof MarketState[keyof typeof MarketState];

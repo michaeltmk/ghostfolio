@@ -32,13 +32,20 @@ export class TransformDataSourceInResponseInterceptor<T>
               activity.SymbolProfile.dataSource = encodeDataSource(
                 activity.SymbolProfile.dataSource
               );
-              activity.dataSource = encodeDataSource(activity.dataSource);
               return activity;
             });
           }
 
           if (data.dataSource) {
             data.dataSource = encodeDataSource(data.dataSource);
+          }
+
+          if (data.errors) {
+            for (const error of data.errors) {
+              if (error.dataSource) {
+                error.dataSource = encodeDataSource(error.dataSource);
+              }
+            }
           }
 
           if (data.holdings) {
@@ -63,6 +70,12 @@ export class TransformDataSourceInResponseInterceptor<T>
               position.dataSource = encodeDataSource(position.dataSource);
               return position;
             });
+          }
+
+          if (data.SymbolProfile) {
+            data.SymbolProfile.dataSource = encodeDataSource(
+              data.SymbolProfile.dataSource
+            );
           }
         }
 

@@ -4,12 +4,14 @@ import { DataGatheringService } from '@ghostfolio/api/services/data-gathering.se
 import { ExchangeRateDataService } from '@ghostfolio/api/services/exchange-rate-data.service';
 import { PrismaService } from '@ghostfolio/api/services/prisma.service';
 import { PropertyService } from '@ghostfolio/api/services/property/property.service';
+import { TagService } from '@ghostfolio/api/services/tag/tag.service';
 import {
   DEMO_USER_ID,
   PROPERTY_IS_READ_ONLY_MODE,
   PROPERTY_SLACK_COMMUNITY_USERS,
   PROPERTY_STRIPE_CONFIG,
-  PROPERTY_SYSTEM_MESSAGE
+  PROPERTY_SYSTEM_MESSAGE,
+  ghostfolioFearAndGreedIndexDataSource
 } from '@ghostfolio/common/config';
 import { encodeDataSource } from '@ghostfolio/common/helper';
 import { InfoItem } from '@ghostfolio/common/interfaces';
@@ -18,7 +20,6 @@ import { Subscription } from '@ghostfolio/common/interfaces/subscription.interfa
 import { permissions } from '@ghostfolio/common/permissions';
 import { Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { DataSource } from '@prisma/client';
 import * as bent from 'bent';
 import { subDays } from 'date-fns';
 
@@ -33,7 +34,8 @@ export class InfoService {
     private readonly jwtService: JwtService,
     private readonly prismaService: PrismaService,
     private readonly propertyService: PropertyService,
-    private readonly redisCacheService: RedisCacheService
+    private readonly redisCacheService: RedisCacheService,
+    private readonly tagService: TagService
   ) {}
 
   public async get(): Promise<InfoItem> {
@@ -52,7 +54,15 @@ export class InfoService {
     }
 
     if (this.configurationService.get('ENABLE_FEATURE_FEAR_AND_GREED_INDEX')) {
-      info.fearAndGreedDataSource = encodeDataSource(DataSource.RAKUTEN);
+      if (
+        this.configurationService.get('ENABLE_FEATURE_SUBSCRIPTION') === true
+      ) {
+        info.fearAndGreedDataSource = encodeDataSource(
+          ghostfolioFearAndGreedIndexDataSource
+        );
+      } else {
+        info.fearAndGreedDataSource = ghostfolioFearAndGreedIndexDataSource;
+      }
     }
 
     if (this.configurationService.get('ENABLE_FEATURE_IMPORT')) {
@@ -97,7 +107,8 @@ export class InfoService {
       demoAuthToken: this.getDemoAuthToken(),
       lastDataGathering: await this.getLastDataGathering(),
       statistics: await this.getStatistics(),
-      subscriptions: await this.getSubscriptions()
+      subscriptions: await this.getSubscriptions(),
+      tags: await this.tagService.get()
     };
   }
 
@@ -142,7 +153,7 @@ export class InfoService {
       const contributors = await get();
       return contributors?.length;
     } catch (error) {
-      Logger.error(error);
+      Logger.error(error, 'InfoService');
 
       return undefined;
     }
@@ -163,7 +174,7 @@ export class InfoService {
       const { stargazers_count } = await get();
       return stargazers_count;
     } catch (error) {
-      Logger.error(error);
+      Logger.error(error, 'InfoService');
 
       return undefined;
     }

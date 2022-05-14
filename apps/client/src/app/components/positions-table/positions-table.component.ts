@@ -13,8 +13,9 @@ import { MatPaginator } from '@angular/material/paginator';
 import { MatSort } from '@angular/material/sort';
 import { MatTableDataSource } from '@angular/material/table';
 import { Router } from '@angular/router';
-import { PortfolioPosition } from '@ghostfolio/common/interfaces';
-import { AssetClass, DataSource, Order as OrderModel } from '@prisma/client';
+import { ASSET_SUB_CLASS_EMERGENCY_FUND } from '@ghostfolio/common/config';
+import { PortfolioPosition, UniqueAsset } from '@ghostfolio/common/interfaces';
+import { AssetClass, Order as OrderModel } from '@prisma/client';
 import { Subject, Subscription } from 'rxjs';
 
 @Component({
@@ -26,7 +27,6 @@ import { Subject, Subscription } from 'rxjs';
 export class PositionsTableComponent implements OnChanges, OnDestroy, OnInit {
   @Input() baseCurrency: string;
   @Input() deviceType: string;
-  @Input() hasPermissionToCreateOrder: boolean;
   @Input() locale: string;
   @Input() positions: PortfolioPosition[];
 
@@ -39,7 +39,10 @@ export class PositionsTableComponent implements OnChanges, OnDestroy, OnInit {
   public dataSource: MatTableDataSource<PortfolioPosition> =
     new MatTableDataSource();
   public displayedColumns = [];
-  public ignoreAssetSubClasses = [AssetClass.CASH.toString()];
+  public ignoreAssetSubClasses = [
+    AssetClass.CASH.toString(),
+    ASSET_SUB_CLASS_EMERGENCY_FUND
+  ];
   public isLoading = true;
   public pageSize = 7;
   public routeQueryParams: Subscription;
@@ -70,18 +73,7 @@ export class PositionsTableComponent implements OnChanges, OnDestroy, OnInit {
     }
   }
 
-  /*public applyFilter(event: Event) {
-    const filterValue = (event.target as HTMLInputElement).value;
-    this.dataSource.filter = filterValue.trim().toLowerCase();
-  }*/
-
-  public onOpenPositionDialog({
-    dataSource,
-    symbol
-  }: {
-    dataSource: DataSource;
-    symbol: string;
-  }): void {
+  public onOpenPositionDialog({ dataSource, symbol }: UniqueAsset): void {
     this.router.navigate([], {
       queryParams: { dataSource, symbol, positionDetailDialog: true }
     });

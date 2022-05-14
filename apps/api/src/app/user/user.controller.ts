@@ -2,17 +2,14 @@ import { ConfigurationService } from '@ghostfolio/api/services/configuration.ser
 import { PropertyService } from '@ghostfolio/api/services/property/property.service';
 import { PROPERTY_IS_READ_ONLY_MODE } from '@ghostfolio/common/config';
 import { User } from '@ghostfolio/common/interfaces';
-import {
-  hasPermission,
-  hasRole,
-  permissions
-} from '@ghostfolio/common/permissions';
+import { hasPermission, permissions } from '@ghostfolio/common/permissions';
 import type { RequestWithUser } from '@ghostfolio/common/types';
 import {
   Body,
   Controller,
   Delete,
   Get,
+  Headers,
   HttpException,
   Inject,
   Param,
@@ -23,7 +20,6 @@ import {
 import { REQUEST } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { AuthGuard } from '@nestjs/passport';
-import { Provider, Role } from '@prisma/client';
 import { User as UserModel } from '@prisma/client';
 import { StatusCodes, getReasonPhrase } from 'http-status-codes';
 
@@ -38,7 +34,7 @@ import { UserService } from './user.service';
 export class UserController {
   public constructor(
     private readonly configurationService: ConfigurationService,
-    private jwtService: JwtService,
+    private readonly jwtService: JwtService,
     private readonly propertyService: PropertyService,
     @Inject(REQUEST) private readonly request: RequestWithUser,
     private readonly userService: UserService
@@ -64,8 +60,13 @@ export class UserController {
 
   @Get()
   @UseGuards(AuthGuard('jwt'))
-  public async getUser(@Param('id') id: string): Promise<User> {
-    return this.userService.getUser(this.request.user);
+  public async getUser(
+    @Headers('accept-language') acceptLanguage: string
+  ): Promise<User> {
+    return this.userService.getUser(
+      this.request.user,
+      acceptLanguage?.split(',')?.[0]
+    );
   }
 
   @Post()
@@ -85,12 +86,13 @@ export class UserController {
 
     const hasAdmin = await this.userService.hasAdmin();
 
-    const { accessToken, id } = await this.userService.createUser({
+    const { accessToken, id, role } = await this.userService.createUser({
       role: hasAdmin ? 'USER' : 'ADMIN'
     });
 
     return {
       accessToken,
+      role,
       authToken: this.jwtService.sign({
         id
       })
@@ -118,7 +120,7 @@ export class UserController {
     };
 
     for (const key in userSettings) {
-      if (userSettings[key] === false) {
+      if (userSettings[key] === false || userSettings[key] === null) {
         delete userSettings[key];
       }
     }

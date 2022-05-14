@@ -3,7 +3,7 @@ import { Injectable } from '@angular/core';
 import { CreateOrderDto } from '@ghostfolio/api/app/order/create-order.dto';
 import { Account, DataSource, Type } from '@prisma/client';
 import { parse } from 'date-fns';
-import { isNumber } from 'lodash';
+import { isFinite } from 'lodash';
 import { parse as csvToJson } from 'papaparse';
 import { EMPTY } from 'rxjs';
 import { catchError } from 'rxjs/operators';
@@ -37,9 +37,9 @@ export class ImportTransactionsService {
       skipEmptyLines: true
     }).data;
 
-    const orders: CreateOrderDto[] = [];
+    const activities: CreateOrderDto[] = [];
     for (const [index, item] of content.entries()) {
-      orders.push({
+      activities.push({
         accountId: this.parseAccount({ item, userAccounts }),
         currency: this.parseCurrency({ content, index, item }),
         dataSource: this.parseDataSource({ item }),
@@ -52,13 +52,13 @@ export class ImportTransactionsService {
       });
     }
 
-    await this.importJson({ content: orders });
+    await this.importJson({ content: activities });
   }
 
   public importJson({ content }: { content: CreateOrderDto[] }): Promise<void> {
     return new Promise((resolve, reject) => {
       this.postImport({
-        orders: content
+        activities: content
       })
         .pipe(
           catchError((error) => {
@@ -121,7 +121,10 @@ export class ImportTransactionsService {
       }
     }
 
-    throw { message: `orders.${index}.currency is not valid`, orders: content };
+    throw {
+      activities: content,
+      message: `activities.${index}.currency is not valid`
+    };
   }
 
   private parseDataSource({ item }: { item: any }) {
@@ -164,7 +167,10 @@ export class ImportTransactionsService {
       }
     }
 
-    throw { message: `orders.${index}.date is not valid`, orders: content };
+    throw {
+      activities: content,
+      message: `activities.${index}.date is not valid`
+    };
   }
 
   private parseFee({
@@ -179,12 +185,15 @@ export class ImportTransactionsService {
     item = this.lowercaseKeys(item);
 
     for (const key of ImportTransactionsService.FEE_KEYS) {
-      if ((item[key] || item[key] === 0) && isNumber(item[key])) {
+      if (isFinite(item[key])) {
         return item[key];
       }
     }
 
-    throw { message: `orders.${index}.fee is not valid`, orders: content };
+    throw {
+      activities: content,
+      message: `activities.${index}.fee is not valid`
+    };
   }
 
   private parseQuantity({
@@ -199,12 +208,15 @@ export class ImportTransactionsService {
     item = this.lowercaseKeys(item);
 
     for (const key of ImportTransactionsService.QUANTITY_KEYS) {
-      if (item[key] && isNumber(item[key])) {
+      if (isFinite(item[key])) {
         return item[key];
       }
     }
 
-    throw { message: `orders.${index}.quantity is not valid`, orders: content };
+    throw {
+      activities: content,
+      message: `activities.${index}.quantity is not valid`
+    };
   }
 
   private parseSymbol({
@@ -224,7 +236,10 @@ export class ImportTransactionsService {
       }
     }
 
-    throw { message: `orders.${index}.symbol is not valid`, orders: content };
+    throw {
+      activities: content,
+      message: `activities.${index}.symbol is not valid`
+    };
   }
 
   private parseType({
@@ -245,6 +260,8 @@ export class ImportTransactionsService {
             return Type.BUY;
           case 'dividend':
             return Type.DIVIDEND;
+          case 'item':
+            return Type.ITEM;
           case 'sell':
             return Type.SELL;
           default:
@@ -253,7 +270,10 @@ export class ImportTransactionsService {
       }
     }
 
-    throw { message: `orders.${index}.type is not valid`, orders: content };
+    throw {
+      activities: content,
+      message: `activities.${index}.type is not valid`
+    };
   }
 
   private parseUnitPrice({
@@ -268,18 +288,18 @@ export class ImportTransactionsService {
     item = this.lowercaseKeys(item);
 
     for (const key of ImportTransactionsService.UNIT_PRICE_KEYS) {
-      if (item[key] && isNumber(item[key])) {
+      if (isFinite(item[key])) {
         return item[key];
       }
     }
 
     throw {
-      message: `orders.${index}.unitPrice is not valid`,
-      orders: content
+      activities: content,
+      message: `activities.${index}.unitPrice is not valid`
     };
   }
 
-  private postImport(aImportData: { orders: CreateOrderDto[] }) {
-    return this.http.post<void>('/api/import', aImportData);
+  private postImport(aImportData: { activities: CreateOrderDto[] }) {
+    return this.http.post<void>('/api/v1/import', aImportData);
   }
 }

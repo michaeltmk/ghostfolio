@@ -1,11 +1,19 @@
-import { IsBoolean, IsOptional } from 'class-validator';
+import { IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class UpdateUserSettingDto {
-  @IsBoolean()
+  @IsNumber()
   @IsOptional()
-  isNewCalculationEngine?: boolean;
+  emergencyFund?: number;
 
   @IsBoolean()
   @IsOptional()
   isRestrictedView?: boolean;
+
+  @IsString()
+  @IsOptional()
+  locale?: string;
+
+  @IsNumber()
+  @IsOptional()
+  savingsRate?: number;
 }

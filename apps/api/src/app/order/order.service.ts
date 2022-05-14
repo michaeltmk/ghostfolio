@@ -3,11 +3,28 @@ import { CacheService } from '@ghostfolio/api/app/cache/cache.service';
 import { DataGatheringService } from '@ghostfolio/api/services/data-gathering.service';
 import { ExchangeRateDataService } from '@ghostfolio/api/services/exchange-rate-data.service';
 import { PrismaService } from '@ghostfolio/api/services/prisma.service';
+import { SymbolProfileService } from '@ghostfolio/api/services/symbol-profile.service';
+import {
+  DATA_GATHERING_QUEUE,
+  GATHER_ASSET_PROFILE_PROCESS
+} from '@ghostfolio/common/config';
+import { Filter } from '@ghostfolio/common/interfaces';
 import { OrderWithAccount } from '@ghostfolio/common/types';
+import { InjectQueue } from '@nestjs/bull';
 import { Injectable } from '@nestjs/common';
-import { DataSource, Order, Prisma, Type as TypeOfOrder } from '@prisma/client';
+import {
+  AssetClass,
+  AssetSubClass,
+  DataSource,
+  Order,
+  Prisma,
+  Type as TypeOfOrder
+} from '@prisma/client';
 import Big from 'big.js';
+import { Queue } from 'bull';
 import { endOfToday, isAfter } from 'date-fns';
+import { groupBy } from 'lodash';
+import { v4 as uuidv4 } from 'uuid';
 
 import { Activity } from './interfaces/activities.interface';
 
@@ -16,9 +33,12 @@ export class OrderService {
   public constructor(
     private readonly accountService: AccountService,
     private readonly cacheService: CacheService,
+    @InjectQueue(DATA_GATHERING_QUEUE)
+    private readonly dataGatheringQueue: Queue,
     private readonly exchangeRateDataService: ExchangeRateDataService,
     private readonly dataGatheringService: DataGatheringService,
-    private readonly prismaService: PrismaService
+    private readonly prismaService: PrismaService,
+    private readonly symbolProfileService: SymbolProfileService
   ) {}
 
   public async order(
@@ -50,7 +70,15 @@ export class OrderService {
   }
 
   public async createOrder(
-    data: Prisma.OrderCreateInput & { accountId?: string; userId: string }
+    data: Prisma.OrderCreateInput & {
+      accountId?: string;
+      assetClass?: AssetClass;
+      assetSubClass?: AssetSubClass;
+      currency?: string;
+      dataSource?: DataSource;
+      symbol?: string;
+      userId: string;
+    }
   ): Promise<Order> {
     const defaultAccount = (
       await this.accountService.getAccounts(data.userId)
@@ -58,7 +86,7 @@ export class OrderService {
       return account.isDefault === true;
     });
 
-    const Account = {
+    let Account = {
       connect: {
         id_userId: {
           userId: data.userId,
@@ -67,29 +95,57 @@ export class OrderService {
       }
     };
 
-    const isDraft = isAfter(data.date as Date, endOfToday());
+    if (data.type === 'ITEM') {
+      const assetClass = data.assetClass;
+      const assetSubClass = data.assetSubClass;
+      const currency = data.SymbolProfile.connectOrCreate.create.currency;
+      const dataSource: DataSource = 'MANUAL';
+      const id = uuidv4();
+      const name = data.SymbolProfile.connectOrCreate.create.symbol;
 
-    // Convert the symbol to uppercase to avoid case-sensitive duplicates
-    const symbol = data.symbol.toUpperCase();
+      Account = undefined;
+      data.id = id;
+      data.SymbolProfile.connectOrCreate.create.assetClass = assetClass;
+      data.SymbolProfile.connectOrCreate.create.assetSubClass = assetSubClass;
+      data.SymbolProfile.connectOrCreate.create.currency = currency;
+      data.SymbolProfile.connectOrCreate.create.dataSource = dataSource;
+      data.SymbolProfile.connectOrCreate.create.name = name;
+      data.SymbolProfile.connectOrCreate.create.symbol = id;
+      data.SymbolProfile.connectOrCreate.where.dataSource_symbol = {
+        dataSource,
+        symbol: id
+      };
+    } else {
+      data.SymbolProfile.connectOrCreate.create.symbol =
+        data.SymbolProfile.connectOrCreate.create.symbol.toUpperCase();
+    }
+
+    await this.dataGatheringQueue.add(GATHER_ASSET_PROFILE_PROCESS, {
+      dataSource: data.SymbolProfile.connectOrCreate.create.dataSource,
+      symbol: data.SymbolProfile.connectOrCreate.create.symbol
+    });
+
+    const isDraft = isAfter(data.date as Date, endOfToday());
 
     if (!isDraft) {
       // Gather symbol data of order in the background, if not draft
       this.dataGatheringService.gatherSymbols([
         {
-          symbol,
-          dataSource: data.dataSource,
-          date: <Date>data.date
+          dataSource: data.SymbolProfile.connectOrCreate.create.dataSource,
+          date: <Date>data.date,
+          symbol: data.SymbolProfile.connectOrCreate.create.symbol
         }
       ]);
     }
 
-    this.dataGatheringService.gatherProfileData([
-      { symbol, dataSource: data.dataSource }
-    ]);
-
     await this.cacheService.flush();
 
     delete data.accountId;
+    delete data.assetClass;
+    delete data.assetSubClass;
+    delete data.currency;
+    delete data.dataSource;
+    delete data.symbol;
     delete data.userId;
 
     const orderData: Prisma.OrderCreateInput = data;
@@ -98,8 +154,7 @@ export class OrderService {
       data: {
         ...orderData,
         Account,
-        isDraft,
-        symbol
+        isDraft
       }
     });
   }
@@ -107,17 +162,25 @@ export class OrderService {
   public async deleteOrder(
     where: Prisma.OrderWhereUniqueInput
   ): Promise<Order> {
-    return this.prismaService.order.delete({
+    const order = await this.prismaService.order.delete({
       where
     });
+
+    if (order.type === 'ITEM') {
+      await this.symbolProfileService.deleteById(order.symbolProfileId);
+    }
+
+    return order;
   }
 
   public async getOrders({
+    filters,
     includeDrafts = false,
     types,
     userCurrency,
     userId
   }: {
+    filters?: Filter[];
     includeDrafts?: boolean;
     types?: TypeOfOrder[];
     userCurrency: string;
@@ -125,8 +188,33 @@ export class OrderService {
   }): Promise<Activity[]> {
     const where: Prisma.OrderWhereInput = { userId };
 
+    const { account: filtersByAccount, tag: filtersByTag } = groupBy(
+      filters,
+      (filter) => {
+        return filter.type;
+      }
+    );
+
+    if (filtersByAccount?.length > 0) {
+      where.accountId = {
+        in: filtersByAccount.map(({ id }) => {
+          return id;
+        })
+      };
+    }
+
     if (includeDrafts === false) {
       where.isDraft = false;
+    }
+
+    if (filtersByTag?.length > 0) {
+      where.tags = {
+        some: {
+          OR: filtersByTag.map(({ id }) => {
+            return { id };
+          })
+        }
+      };
     }
 
     if (types) {
@@ -150,7 +238,8 @@ export class OrderService {
             }
           },
           // eslint-disable-next-line @typescript-eslint/naming-convention
-          SymbolProfile: true
+          SymbolProfile: true,
+          tags: true
         },
         orderBy: { date: 'asc' }
       })
@@ -162,38 +251,63 @@ export class OrderService {
         value,
         feeInBaseCurrency: this.exchangeRateDataService.toCurrency(
           order.fee,
-          order.currency,
+          order.SymbolProfile.currency,
           userCurrency
         ),
         valueInBaseCurrency: this.exchangeRateDataService.toCurrency(
           value,
-          order.currency,
+          order.SymbolProfile.currency,
           userCurrency
         )
       };
     });
   }
 
-  public async updateOrder(params: {
+  public async updateOrder({
+    data,
+    where
+  }: {
+    data: Prisma.OrderUpdateInput & {
+      assetClass?: AssetClass;
+      assetSubClass?: AssetSubClass;
+      currency?: string;
+      dataSource?: DataSource;
+      symbol?: string;
+    };
     where: Prisma.OrderWhereUniqueInput;
-    data: Prisma.OrderUpdateInput;
   }): Promise<Order> {
-    const { data, where } = params;
+    if (data.Account.connect.id_userId.id === null) {
+      delete data.Account;
+    }
 
-    const isDraft = isAfter(data.date as Date, endOfToday());
+    let isDraft = false;
 
-    if (!isDraft) {
-      // Gather symbol data of order in the background, if not draft
-      this.dataGatheringService.gatherSymbols([
-        {
-          dataSource: <DataSource>data.dataSource,
-          date: <Date>data.date,
-          symbol: <string>data.symbol
-        }
-      ]);
+    if (data.type === 'ITEM') {
+      delete data.SymbolProfile.connect;
+    } else {
+      delete data.SymbolProfile.update;
+
+      isDraft = isAfter(data.date as Date, endOfToday());
+
+      if (!isDraft) {
+        // Gather symbol data of order in the background, if not draft
+        this.dataGatheringService.gatherSymbols([
+          {
+            dataSource: data.SymbolProfile.connect.dataSource_symbol.dataSource,
+            date: <Date>data.date,
+            symbol: data.SymbolProfile.connect.dataSource_symbol.symbol
+          }
+        ]);
+      }
     }
 
     await this.cacheService.flush();
+
+    delete data.assetClass;
+    delete data.assetSubClass;
+    delete data.currency;
+    delete data.dataSource;
+    delete data.symbol;
 
     return this.prismaService.order.update({
       data: {

@@ -8,27 +8,33 @@ import { UserService } from '@ghostfolio/client/services/user/user.service';
 import { UNKNOWN_KEY } from '@ghostfolio/common/config';
 import { prettifySymbol } from '@ghostfolio/common/helper';
 import {
+  Filter,
   PortfolioDetails,
   PortfolioPosition,
+  UniqueAsset,
   User
 } from '@ghostfolio/common/interfaces';
-import { hasPermission, permissions } from '@ghostfolio/common/permissions';
-import { ToggleOption } from '@ghostfolio/common/types';
-import { AssetClass, DataSource } from '@prisma/client';
+import { Market, ToggleOption } from '@ghostfolio/common/types';
+import { Account, AssetClass, DataSource } from '@prisma/client';
 import { DeviceDetectorService } from 'ngx-device-detector';
 import { Subject, Subscription } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
+import { distinctUntilChanged, switchMap, takeUntil } from 'rxjs/operators';
 
 @Component({
-  host: { class: 'mb-5' },
+  host: { class: 'page' },
   selector: 'gf-allocations-page',
   styleUrls: ['./allocations-page.scss'],
   templateUrl: './allocations-page.html'
 })
 export class AllocationsPageComponent implements OnDestroy, OnInit {
   public accounts: {
-    [symbol: string]: Pick<PortfolioPosition, 'name'> & { value: number };
+    [id: string]: Pick<Account, 'name'> & {
+      id: string;
+      value: number;
+    };
   };
+  public activeFilters: Filter[] = [];
+  public allFilters: Filter[];
   public continents: {
     [code: string]: { name: string; value: number };
   };
@@ -36,13 +42,18 @@ export class AllocationsPageComponent implements OnDestroy, OnInit {
     [code: string]: { name: string; value: number };
   };
   public deviceType: string;
+  public filters$ = new Subject<Filter[]>();
   public hasImpersonationId: boolean;
-  public hasPermissionToCreateOrder: boolean;
+  public isLoading = false;
+  public markets: {
+    [key in Market]: { name: string; value: number };
+  };
   public period = 'current';
   public periodOptions: ToggleOption[] = [
     { label: 'Initial', value: 'original' },
     { label: 'Current', value: 'current' }
   ];
+  public placeholder = '';
   public portfolioDetails: PortfolioDetails;
   public positions: {
     [symbol: string]: Pick<
@@ -61,7 +72,12 @@ export class AllocationsPageComponent implements OnDestroy, OnInit {
     [name: string]: { name: string; value: number };
   };
   public symbols: {
-    [name: string]: { name: string; symbol: string; value: number };
+    [name: string]: {
+      dataSource?: DataSource;
+      name: string;
+      symbol: string;
+      value: number;
+    };
   };
 
   public user: User;
@@ -110,13 +126,25 @@ export class AllocationsPageComponent implements OnDestroy, OnInit {
         this.hasImpersonationId = !!aId;
       });
 
-    this.dataService
-      .fetchPortfolioDetails({})
-      .pipe(takeUntil(this.unsubscribeSubject))
+    this.filters$
+      .pipe(
+        distinctUntilChanged(),
+        switchMap((filters) => {
+          this.isLoading = true;
+          this.activeFilters = filters;
+
+          return this.dataService.fetchPortfolioDetails({
+            filters: this.activeFilters
+          });
+        }),
+        takeUntil(this.unsubscribeSubject)
+      )
       .subscribe((portfolioDetails) => {
         this.portfolioDetails = portfolioDetails;
 
         this.initializeAnalysisData(this.period);
+
+        this.isLoading = false;
 
         this.changeDetectorRef.markForCheck();
       });
@@ -127,17 +155,34 @@ export class AllocationsPageComponent implements OnDestroy, OnInit {
         if (state?.user) {
           this.user = state.user;
 
-          this.hasPermissionToCreateOrder = hasPermission(
-            this.user.permissions,
-            permissions.createOrder
-          );
+          const accountFilters: Filter[] = this.user.accounts
+            .filter(({ accountType }) => {
+              return accountType === 'SECURITIES';
+            })
+            .map(({ id, name }) => {
+              return {
+                id,
+                label: name,
+                type: 'account'
+              };
+            });
+
+          const tagFilters: Filter[] = this.user.tags.map(({ id, name }) => {
+            return {
+              id,
+              label: name,
+              type: 'tag'
+            };
+          });
+
+          this.allFilters = [...accountFilters, ...tagFilters];
 
           this.changeDetectorRef.markForCheck();
         }
       });
   }
 
-  public initializeAnalysisData(aPeriod: string) {
+  public initialize() {
     this.accounts = {};
     this.continents = {
       [UNKNOWN_KEY]: {
@@ -148,6 +193,20 @@ export class AllocationsPageComponent implements OnDestroy, OnInit {
     this.countries = {
       [UNKNOWN_KEY]: {
         name: UNKNOWN_KEY,
+        value: 0
+      }
+    };
+    this.markets = {
+      developedMarkets: {
+        name: 'developedMarkets',
+        value: 0
+      },
+      emergingMarkets: {
+        name: 'emergingMarkets',
+        value: 0
+      },
+      otherMarkets: {
+        name: 'otherMarkets',
         value: 0
       }
     };
@@ -166,11 +225,16 @@ export class AllocationsPageComponent implements OnDestroy, OnInit {
         value: 0
       }
     };
+  }
+
+  public initializeAnalysisData(aPeriod: string) {
+    this.initialize();
 
     for (const [id, { current, name, original }] of Object.entries(
       this.portfolioDetails.accounts
     )) {
       this.accounts[id] = {
+        id,
         name,
         value: aPeriod === 'original' ? original : current
       };
@@ -209,6 +273,16 @@ export class AllocationsPageComponent implements OnDestroy, OnInit {
         // Prepare analysis data by continents, countries and sectors except for cash
 
         if (position.countries.length > 0) {
+          this.markets.developedMarkets.value +=
+            position.markets.developedMarkets *
+            (aPeriod === 'original' ? position.investment : position.value);
+          this.markets.emergingMarkets.value +=
+            position.markets.emergingMarkets *
+            (aPeriod === 'original' ? position.investment : position.value);
+          this.markets.otherMarkets.value +=
+            position.markets.otherMarkets *
+            (aPeriod === 'original' ? position.investment : position.value);
+
           for (const country of position.countries) {
             const { code, continent, name, weight } = country;
 
@@ -275,20 +349,39 @@ export class AllocationsPageComponent implements OnDestroy, OnInit {
         }
       }
 
-      if (position.assetClass === AssetClass.EQUITY) {
-        this.symbols[prettifySymbol(symbol)] = {
-          name: position.name,
-          symbol: prettifySymbol(symbol),
-          value: aPeriod === 'original' ? position.investment : position.value
-        };
-      }
+      this.symbols[prettifySymbol(symbol)] = {
+        dataSource: position.dataSource,
+        name: position.name,
+        symbol: prettifySymbol(symbol),
+        value: aPeriod === 'original' ? position.investment : position.value
+      };
     }
+
+    const marketsTotal =
+      this.markets.developedMarkets.value +
+      this.markets.emergingMarkets.value +
+      this.markets.otherMarkets.value;
+
+    this.markets.developedMarkets.value =
+      this.markets.developedMarkets.value / marketsTotal;
+    this.markets.emergingMarkets.value =
+      this.markets.emergingMarkets.value / marketsTotal;
+    this.markets.otherMarkets.value =
+      this.markets.otherMarkets.value / marketsTotal;
   }
 
   public onChangePeriod(aValue: string) {
     this.period = aValue;
 
     this.initializeAnalysisData(this.period);
+  }
+
+  public onProportionChartClicked({ dataSource, symbol }: UniqueAsset) {
+    if (dataSource && symbol) {
+      this.router.navigate([], {
+        queryParams: { dataSource, symbol, positionDetailDialog: true }
+      });
+    }
   }
 
   public ngOnDestroy() {

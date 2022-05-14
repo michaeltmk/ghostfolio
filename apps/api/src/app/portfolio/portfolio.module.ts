@@ -13,14 +13,13 @@ import { SymbolProfileModule } from '@ghostfolio/api/services/symbol-profile.mod
 import { Module } from '@nestjs/common';
 
 import { CurrentRateService } from './current-rate.service';
-import { PortfolioServiceStrategy } from './portfolio-service.strategy';
 import { PortfolioController } from './portfolio.controller';
 import { PortfolioService } from './portfolio.service';
-import { PortfolioServiceNew } from './portfolio.service-new';
 import { RulesService } from './rules.service';
 
 @Module({
-  exports: [PortfolioServiceStrategy],
+  controllers: [PortfolioController],
+  exports: [PortfolioService],
   imports: [
     AccessModule,
     ConfigurationModule,
@@ -34,13 +33,10 @@ import { RulesService } from './rules.service';
     SymbolProfileModule,
     UserModule
   ],
-  controllers: [PortfolioController],
   providers: [
     AccountService,
     CurrentRateService,
     PortfolioService,
-    PortfolioServiceNew,
-    PortfolioServiceStrategy,
     RulesService
   ]
 })

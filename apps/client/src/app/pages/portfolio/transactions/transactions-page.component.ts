@@ -7,6 +7,7 @@ import { Activity } from '@ghostfolio/api/app/order/interfaces/activities.interf
 import { UpdateOrderDto } from '@ghostfolio/api/app/order/update-order.dto';
 import { PositionDetailDialog } from '@ghostfolio/client/components/position/position-detail-dialog/position-detail-dialog.component';
 import { DataService } from '@ghostfolio/client/services/data.service';
+import { IcsService } from '@ghostfolio/client/services/ics/ics.service';
 import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import { ImportTransactionsService } from '@ghostfolio/client/services/import-transactions.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
@@ -24,7 +25,7 @@ import { CreateOrUpdateTransactionDialog } from './create-or-update-transaction-
 import { ImportTransactionDialog } from './import-transaction-dialog/import-transaction-dialog.component';
 
 @Component({
-  host: { class: 'mb-5' },
+  host: { class: 'page' },
   selector: 'gf-transactions-page',
   styleUrls: ['./transactions-page.scss'],
   templateUrl: './transactions-page.html'
@@ -50,6 +51,7 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
     private dataService: DataService,
     private deviceService: DeviceDetectorService,
     private dialog: MatDialog,
+    private icsService: IcsService,
     private impersonationStorageService: ImpersonationStorageService,
     private importTransactionsService: ImportTransactionsService,
     private route: ActivatedRoute,
@@ -132,8 +134,8 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
       });
   }
 
-  public onCloneTransaction(aTransaction: OrderModel) {
-    this.openCreateTransactionDialog(aTransaction);
+  public onCloneTransaction(aActivity: Activity) {
+    this.openCreateTransactionDialog(aActivity);
   }
 
   public onDeleteTransaction(aId: string) {
@@ -152,14 +154,36 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
       .fetchExport(activityIds)
       .pipe(takeUntil(this.unsubscribeSubject))
       .subscribe((data) => {
-        downloadAsFile(
-          data,
-          `ghostfolio-export-${format(
+        for (const activity of data.activities) {
+          delete activity.id;
+        }
+
+        downloadAsFile({
+          content: data,
+          fileName: `ghostfolio-export-${format(
             parseISO(data.meta.date),
             'yyyyMMddHHmm'
           )}.json`,
-          'text/plain'
-        );
+          format: 'json'
+        });
+      });
+  }
+
+  public onExportDrafts(activityIds?: string[]) {
+    this.dataService
+      .fetchExport(activityIds)
+      .pipe(takeUntil(this.unsubscribeSubject))
+      .subscribe((data) => {
+        downloadAsFile({
+          content: this.icsService.transformActivitiesToIcsContent(
+            data.activities
+          ),
+          contentType: 'text/calendar',
+          fileName: `ghostfolio-draft${
+            data.activities.length > 1 ? 's' : ''
+          }-${format(parseISO(data.meta.date), 'yyyyMMddHHmmss')}.ics`,
+          format: 'string'
+        });
       });
   }
 
@@ -185,19 +209,31 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
           if (file.name.endsWith('.json')) {
             const content = JSON.parse(fileContent);
 
-            if (!isArray(content.orders)) {
-              throw new Error();
+            if (!isArray(content.activities)) {
+              if (isArray(content.orders)) {
+                this.handleImportError({
+                  activities: [],
+                  error: {
+                    error: {
+                      message: [`orders needs to be renamed to activities`]
+                    }
+                  }
+                });
+                return;
+              } else {
+                throw new Error();
+              }
             }
 
             try {
               await this.importTransactionsService.importJson({
-                content: content.orders
+                content: content.activities
               });
 
               this.handleImportSuccess();
             } catch (error) {
               console.error(error);
-              this.handleImportError({ error, orders: content.orders });
+              this.handleImportError({ error, activities: content.activities });
             }
 
             return;
@@ -212,10 +248,10 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
             } catch (error) {
               console.error(error);
               this.handleImportError({
+                activities: error?.activities ?? [],
                 error: {
                   error: { message: error?.error?.message ?? [error?.message] }
-                },
-                orders: error?.orders ?? []
+                }
               });
             }
 
@@ -226,8 +262,8 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
         } catch (error) {
           console.error(error);
           this.handleImportError({
-            error: { error: { message: ['Unexpected format'] } },
-            orders: []
+            activities: [],
+            error: { error: { message: ['Unexpected format'] } }
           });
         }
       };
@@ -242,35 +278,13 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
     });
   }
 
-  public openUpdateTransactionDialog({
-    accountId,
-    currency,
-    dataSource,
-    date,
-    fee,
-    id,
-    quantity,
-    symbol,
-    type,
-    unitPrice
-  }: OrderModel): void {
+  public openUpdateTransactionDialog(activity: Activity): void {
     const dialogRef = this.dialog.open(CreateOrUpdateTransactionDialog, {
       data: {
+        activity,
         accounts: this.user?.accounts?.filter((account) => {
           return account.accountType === 'SECURITIES';
         }),
-        transaction: {
-          accountId,
-          currency,
-          dataSource,
-          date,
-          fee,
-          id,
-          quantity,
-          symbol,
-          type,
-          unitPrice
-        },
         user: this.user
       },
       height: this.deviceType === 'mobile' ? '97.5vh' : '80vh',
@@ -281,7 +295,7 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
       .afterClosed()
       .pipe(takeUntil(this.unsubscribeSubject))
       .subscribe((data: any) => {
-        const transaction: UpdateOrderDto = data?.transaction;
+        const transaction: UpdateOrderDto = data?.activity;
 
         if (transaction) {
           this.dataService
@@ -303,12 +317,18 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
     this.unsubscribeSubject.complete();
   }
 
-  private handleImportError({ error, orders }: { error: any; orders: any[] }) {
+  private handleImportError({
+    activities,
+    error
+  }: {
+    activities: any[];
+    error: any;
+  }) {
     this.snackBar.dismiss();
 
     this.dialog.open(ImportTransactionDialog, {
       data: {
-        orders,
+        activities,
         deviceType: this.deviceType,
         messages: error?.error?.message
       },
@@ -324,7 +344,7 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
     });
   }
 
-  private openCreateTransactionDialog(aTransaction?: OrderModel): void {
+  private openCreateTransactionDialog(aActivity?: Activity): void {
     this.userService
       .get()
       .pipe(takeUntil(this.unsubscribeSubject))
@@ -336,15 +356,14 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
             accounts: this.user?.accounts?.filter((account) => {
               return account.accountType === 'SECURITIES';
             }),
-            transaction: {
-              accountId: aTransaction?.accountId ?? this.defaultAccountId,
-              currency: aTransaction?.currency ?? null,
-              dataSource: aTransaction?.dataSource ?? null,
+            activity: {
+              ...aActivity,
+              accountId: aActivity?.accountId ?? this.defaultAccountId,
               date: new Date(),
+              id: null,
               fee: 0,
               quantity: null,
-              symbol: aTransaction?.symbol ?? null,
-              type: aTransaction?.type ?? 'BUY',
+              type: aActivity?.type ?? 'BUY',
               unitPrice: null
             },
             user: this.user
@@ -357,7 +376,7 @@ export class TransactionsPageComponent implements OnDestroy, OnInit {
           .afterClosed()
           .pipe(takeUntil(this.unsubscribeSubject))
           .subscribe((data: any) => {
-            const transaction: CreateOrderDto = data?.transaction;
+            const transaction: CreateOrderDto = data?.activity;
 
             if (transaction) {
               this.dataService.postOrder(transaction).subscribe({

@@ -2,6 +2,7 @@ import { SubscriptionService } from '@ghostfolio/api/app/subscription/subscripti
 import { ConfigurationService } from '@ghostfolio/api/services/configuration.service';
 import { PrismaService } from '@ghostfolio/api/services/prisma.service';
 import { PropertyService } from '@ghostfolio/api/services/property/property.service';
+import { TagService } from '@ghostfolio/api/services/tag/tag.service';
 import {
   PROPERTY_IS_READ_ONLY_MODE,
   baseCurrency,
@@ -13,9 +14,8 @@ import {
   hasRole,
   permissions
 } from '@ghostfolio/common/permissions';
-import { SubscriptionType } from '@ghostfolio/common/types/subscription.type';
 import { Injectable } from '@nestjs/common';
-import { Prisma, Provider, Role, User, ViewMode } from '@prisma/client';
+import { Prisma, Role, User, ViewMode } from '@prisma/client';
 
 import { UserSettingsParams } from './interfaces/user-settings-params.interface';
 import { UserSettings } from './interfaces/user-settings.interface';
@@ -30,17 +30,21 @@ export class UserService {
     private readonly configurationService: ConfigurationService,
     private readonly prismaService: PrismaService,
     private readonly propertyService: PropertyService,
-    private readonly subscriptionService: SubscriptionService
+    private readonly subscriptionService: SubscriptionService,
+    private readonly tagService: TagService
   ) {}
 
-  public async getUser({
-    Account,
-    alias,
-    id,
-    permissions,
-    Settings,
-    subscription
-  }: UserWithSettings): Promise<IUser> {
+  public async getUser(
+    {
+      Account,
+      alias,
+      id,
+      permissions,
+      Settings,
+      subscription
+    }: UserWithSettings,
+    aLocale = locale
+  ): Promise<IUser> {
     const access = await this.prismaService.access.findMany({
       include: {
         User: true
@@ -48,12 +52,21 @@ export class UserService {
       orderBy: { User: { alias: 'asc' } },
       where: { GranteeUser: { id } }
     });
+    let tags = await this.tagService.getByUser(id);
+
+    if (
+      this.configurationService.get('ENABLE_FEATURE_SUBSCRIPTION') &&
+      subscription.type === 'Basic'
+    ) {
+      tags = [];
+    }
 
     return {
       alias,
       id,
       permissions,
       subscription,
+      tags,
       access: access.map((accessItem) => {
         return {
           alias: accessItem.User.alias,
@@ -63,8 +76,8 @@ export class UserService {
       accounts: Account,
       settings: {
         ...(<UserSettings>Settings.settings),
-        locale,
         baseCurrency: Settings?.currency ?? UserService.DEFAULT_CURRENCY,
+        locale: (<UserSettings>Settings.settings)?.locale ?? aLocale,
         viewMode: Settings?.viewMode ?? ViewMode.DEFAULT
       }
     };
@@ -144,13 +157,6 @@ export class UserService {
       user.subscription = this.subscriptionService.getSubscription(
         userFromDatabase?.Subscription
       );
-
-      if (user.subscription.type === SubscriptionType.Basic) {
-        user.permissions = user.permissions.filter((permission) => {
-          return permission !== permissions.updateViewMode;
-        });
-        user.Settings.viewMode = ViewMode.ZEN;
-      }
     }
 
     return user;
@@ -180,7 +186,11 @@ export class UserService {
     return hash.digest('hex');
   }
 
-  public async createUser(data?: Prisma.UserCreateInput): Promise<User> {
+  public async createUser(data: Prisma.UserCreateInput): Promise<User> {
+    if (!data?.provider) {
+      data.provider = 'ANONYMOUS';
+    }
+
     let user = await this.prismaService.user.create({
       data: {
         ...data,
@@ -199,7 +209,7 @@ export class UserService {
       }
     });
 
-    if (data.provider === Provider.ANONYMOUS) {
+    if (data.provider === 'ANONYMOUS') {
       const accessToken = this.createAccessToken(
         user.id,
         this.getRandomString(10)

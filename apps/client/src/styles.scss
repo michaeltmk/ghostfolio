@@ -134,6 +134,10 @@ ngx-skeleton-loader {
   }
 }
 
+.cursor-default {
+  cursor: default;
+}
+
 .cursor-pointer {
   cursor: pointer;
 }
@@ -162,6 +166,10 @@ ngx-skeleton-loader {
 
 .no-min-width {
   min-width: unset !important;
+}
+
+.page {
+  padding-bottom: 5rem;
 }
 
 .svgMap-tooltip {

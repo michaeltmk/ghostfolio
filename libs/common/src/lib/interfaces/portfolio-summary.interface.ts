@@ -5,8 +5,10 @@ export interface PortfolioSummary extends PortfolioPerformance {
   cash: number;
   dividend: number;
   committedFunds: number;
+  emergencyFund: number;
   fees: number;
   firstOrderDate: Date;
+  items: number;
   netWorth: number;
   ordersCount: number;
   totalBuy: number;

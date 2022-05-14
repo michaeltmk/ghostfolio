@@ -1,4 +1,3 @@
-import { HistoricalDataItem } from '@ghostfolio/api/app/portfolio/interfaces/portfolio-position-detail.interface';
 import { DataProviderService } from '@ghostfolio/api/services/data-provider/data-provider.service';
 import {
   IDataGatheringItem,
@@ -6,6 +5,7 @@ import {
 } from '@ghostfolio/api/services/interfaces/interfaces';
 import { MarketDataService } from '@ghostfolio/api/services/market-data.service';
 import { DATE_FORMAT } from '@ghostfolio/common/helper';
+import { HistoricalDataItem } from '@ghostfolio/common/interfaces';
 import { Injectable, Logger } from '@nestjs/common';
 import { DataSource } from '@prisma/client';
 import { format, subDays } from 'date-fns';
@@ -27,8 +27,10 @@ export class SymbolService {
     dataGatheringItem: IDataGatheringItem;
     includeHistoricalData?: number;
   }): Promise<SymbolItem> {
-    const response = await this.dataProviderService.get([dataGatheringItem]);
-    const { currency, marketPrice } = response[dataGatheringItem.symbol] ?? {};
+    const quotes = await this.dataProviderService.getQuotes([
+      dataGatheringItem
+    ]);
+    const { currency, marketPrice } = quotes[dataGatheringItem.symbol] ?? {};
 
     if (dataGatheringItem.dataSource && marketPrice) {
       let historicalData: HistoricalDataItem[] = [];
@@ -93,7 +95,7 @@ export class SymbolService {
       results.items = items;
       return results;
     } catch (error) {
-      Logger.error(error);
+      Logger.error(error, 'SymbolService');
 
       throw error;
     }

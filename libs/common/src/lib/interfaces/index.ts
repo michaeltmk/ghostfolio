@@ -8,6 +8,8 @@ import {
 } from './admin-market-data.interface';
 import { Coupon } from './coupon.interface';
 import { Export } from './export.interface';
+import { Filter } from './filter.interface';
+import { HistoricalDataItem } from './historical-data-item.interface';
 import { InfoItem } from './info-item.interface';
 import { PortfolioChart } from './portfolio-chart.interface';
 import { PortfolioDetails } from './portfolio-details.interface';
@@ -21,7 +23,10 @@ import { PortfolioReportRule } from './portfolio-report-rule.interface';
 import { PortfolioReport } from './portfolio-report.interface';
 import { PortfolioSummary } from './portfolio-summary.interface';
 import { Position } from './position.interface';
+import { ResponseError } from './responses/errors.interface';
+import { PortfolioPerformanceResponse } from './responses/portfolio-performance-response.interface';
 import { TimelinePosition } from './timeline-position.interface';
+import { UniqueAsset } from './unique-asset.interface';
 import { UserSettings } from './user-settings.interface';
 import { UserWithSettings } from './user-with-settings';
 import { User } from './user.interface';
@@ -35,6 +40,8 @@ export {
   AdminMarketDataItem,
   Coupon,
   Export,
+  Filter,
+  HistoricalDataItem,
   InfoItem,
   PortfolioChart,
   PortfolioDetails,
@@ -42,13 +49,16 @@ export {
   PortfolioItem,
   PortfolioOverview,
   PortfolioPerformance,
+  PortfolioPerformanceResponse,
   PortfolioPosition,
   PortfolioPublicDetails,
   PortfolioReport,
   PortfolioReportRule,
   PortfolioSummary,
   Position,
+  ResponseError,
   TimelinePosition,
+  UniqueAsset,
   User,
   UserSettings,
   UserWithSettings

@@ -3,10 +3,13 @@ import { Injectable } from '@angular/core';
 import { UpdateMarketDataDto } from '@ghostfolio/api/app/admin/update-market-data.dto';
 import { IDataProviderHistoricalResponse } from '@ghostfolio/api/services/interfaces/interfaces';
 import { DATE_FORMAT } from '@ghostfolio/common/helper';
-import { AdminMarketDataDetails } from '@ghostfolio/common/interfaces';
+import {
+  AdminMarketDataDetails,
+  UniqueAsset
+} from '@ghostfolio/common/interfaces';
 import { DataSource, MarketData } from '@prisma/client';
 import { format, parseISO } from 'date-fns';
-import { map, Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 
 @Injectable({
   providedIn: 'root'
@@ -14,15 +17,9 @@ import { map, Observable } from 'rxjs';
 export class AdminService {
   public constructor(private http: HttpClient) {}
 
-  public deleteProfileData({
-    dataSource,
-    symbol
-  }: {
-    dataSource: DataSource;
-    symbol: string;
-  }) {
+  public deleteProfileData({ dataSource, symbol }: UniqueAsset) {
     return this.http.delete<void>(
-      `/api/admin/profile-data/${dataSource}/${symbol}`
+      `/api/v1/admin/profile-data/${dataSource}/${symbol}`
     );
   }
 
@@ -34,7 +31,7 @@ export class AdminService {
     symbol: string;
   }): Observable<AdminMarketDataDetails> {
     return this.http
-      .get<any>(`/api/admin/market-data/${dataSource}/${symbol}`)
+      .get<any>(`/api/v1/admin/market-data/${dataSource}/${symbol}`)
       .pipe(
         map((data) => {
           for (const item of data.marketData) {
@@ -46,22 +43,16 @@ export class AdminService {
   }
 
   public gatherMax() {
-    return this.http.post<void>(`/api/admin/gather/max`, {});
+    return this.http.post<void>(`/api/v1/admin/gather/max`, {});
   }
 
   public gatherProfileData() {
-    return this.http.post<void>(`/api/admin/gather/profile-data`, {});
+    return this.http.post<void>(`/api/v1/admin/gather/profile-data`, {});
   }
 
-  public gatherProfileDataBySymbol({
-    dataSource,
-    symbol
-  }: {
-    dataSource: DataSource;
-    symbol: string;
-  }) {
+  public gatherProfileDataBySymbol({ dataSource, symbol }: UniqueAsset) {
     return this.http.post<void>(
-      `/api/admin/gather/profile-data/${dataSource}/${symbol}`,
+      `/api/v1/admin/gather/profile-data/${dataSource}/${symbol}`,
       {}
     );
   }
@@ -70,12 +61,10 @@ export class AdminService {
     dataSource,
     date,
     symbol
-  }: {
-    dataSource: DataSource;
+  }: UniqueAsset & {
     date?: Date;
-    symbol: string;
   }) {
-    let url = `/api/admin/gather/${dataSource}/${symbol}`;
+    let url = `/api/v1/admin/gather/${dataSource}/${symbol}`;
 
     if (date) {
       url = `${url}/${format(date, DATE_FORMAT)}`;
@@ -93,7 +82,7 @@ export class AdminService {
     date: Date;
     symbol: string;
   }) {
-    const url = `/api/symbol/${dataSource}/${symbol}/${format(
+    const url = `/api/v1/symbol/${dataSource}/${symbol}/${format(
       date,
       DATE_FORMAT
     )}`;
@@ -112,7 +101,7 @@ export class AdminService {
     marketData: UpdateMarketDataDto;
     symbol: string;
   }) {
-    const url = `/api/admin/market-data/${dataSource}/${symbol}/${format(
+    const url = `/api/v1/admin/market-data/${dataSource}/${symbol}/${format(
       date,
       DATE_FORMAT
     )}`;

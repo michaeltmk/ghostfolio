@@ -1,8 +1,6 @@
-import { COMMA, ENTER } from '@angular/cdk/keycodes';
 import {
   ChangeDetectionStrategy,
   Component,
-  ElementRef,
   EventEmitter,
   Input,
   OnChanges,
@@ -11,23 +9,18 @@ import {
   ViewChild
 } from '@angular/core';
 import { FormControl } from '@angular/forms';
-import {
-  MatAutocomplete,
-  MatAutocompleteSelectedEvent
-} from '@angular/material/autocomplete';
-import { MatChipInputEvent } from '@angular/material/chips';
 import { MatSort } from '@angular/material/sort';
 import { MatTableDataSource } from '@angular/material/table';
 import { Router } from '@angular/router';
 import { Activity } from '@ghostfolio/api/app/order/interfaces/activities.interface';
-import { DEFAULT_DATE_FORMAT } from '@ghostfolio/common/config';
+import { getDateFormatString } from '@ghostfolio/common/helper';
+import { Filter, UniqueAsset } from '@ghostfolio/common/interfaces';
 import { OrderWithAccount } from '@ghostfolio/common/types';
-import { DataSource } from '@prisma/client';
 import Big from 'big.js';
+import { isUUID } from 'class-validator';
 import { endOfToday, format, isAfter } from 'date-fns';
 import { isNumber } from 'lodash';
-import { BehaviorSubject, Observable, Subject, Subscription } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
+import { Subject, Subscription, distinctUntilChanged, takeUntil } from 'rxjs';
 
 const SEARCH_PLACEHOLDER = 'Search for account, currency, symbol or type...';
 const SEARCH_STRING_SEPARATOR = ',';
@@ -55,76 +48,36 @@ export class ActivitiesTableComponent implements OnChanges, OnDestroy {
   @Output() activityToClone = new EventEmitter<OrderWithAccount>();
   @Output() activityToUpdate = new EventEmitter<OrderWithAccount>();
   @Output() export = new EventEmitter<string[]>();
+  @Output() exportDrafts = new EventEmitter<string[]>();
   @Output() import = new EventEmitter<void>();
 
-  @ViewChild('autocomplete') matAutocomplete: MatAutocomplete;
-  @ViewChild('searchInput') searchInput: ElementRef<HTMLInputElement>;
   @ViewChild(MatSort) sort: MatSort;
 
+  public allFilters: Filter[];
   public dataSource: MatTableDataSource<Activity> = new MatTableDataSource();
-  public defaultDateFormat = DEFAULT_DATE_FORMAT;
+  public defaultDateFormat: string;
   public displayedColumns = [];
   public endOfToday = endOfToday();
-  public filters$: Subject<string[]> = new BehaviorSubject([]);
-  public filters: Observable<string[]> = this.filters$.asObservable();
+  public filters$ = new Subject<Filter[]>();
+  public hasDrafts = false;
   public isAfter = isAfter;
   public isLoading = true;
+  public isUUID = isUUID;
   public placeholder = '';
   public routeQueryParams: Subscription;
   public searchControl = new FormControl();
   public searchKeywords: string[] = [];
-  public separatorKeysCodes: number[] = [ENTER, COMMA];
   public totalFees: number;
   public totalValue: number;
 
-  private allFilters: string[];
   private unsubscribeSubject = new Subject<void>();
 
   public constructor(private router: Router) {
-    this.searchControl.valueChanges
-      .pipe(takeUntil(this.unsubscribeSubject))
-      .subscribe((keyword) => {
-        if (keyword) {
-          const filterValue = keyword.toLowerCase();
-          this.filters$.next(
-            this.allFilters.filter(
-              (filter) => filter.toLowerCase().indexOf(filterValue) === 0
-            )
-          );
-        } else {
-          this.filters$.next(this.allFilters);
-        }
+    this.filters$
+      .pipe(distinctUntilChanged(), takeUntil(this.unsubscribeSubject))
+      .subscribe((filters) => {
+        this.updateFilters(filters);
       });
-  }
-
-  public addKeyword({ input, value }: MatChipInputEvent): void {
-    if (value?.trim()) {
-      this.searchKeywords.push(value.trim());
-      this.updateFilter();
-    }
-
-    // Reset the input value
-    if (input) {
-      input.value = '';
-    }
-
-    this.searchControl.setValue(null);
-  }
-
-  public removeKeyword(keyword: string): void {
-    const index = this.searchKeywords.indexOf(keyword);
-
-    if (index >= 0) {
-      this.searchKeywords.splice(index, 1);
-      this.updateFilter();
-    }
-  }
-
-  public keywordSelected(event: MatAutocompleteSelectedEvent): void {
-    this.searchKeywords.push(event.option.viewValue);
-    this.updateFilter();
-    this.searchInput.nativeElement.value = '';
-    this.searchControl.setValue(null);
   }
 
   public ngOnChanges() {
@@ -133,11 +86,12 @@ export class ActivitiesTableComponent implements OnChanges, OnDestroy {
       'date',
       'type',
       'symbol',
-      'currency',
       'quantity',
       'unitPrice',
       'fee',
       'value',
+      'currency',
+      'valueInBaseCurrency',
       'account',
       'actions'
     ];
@@ -148,9 +102,15 @@ export class ActivitiesTableComponent implements OnChanges, OnDestroy {
       });
     }
 
-    this.isLoading = true;
+    this.defaultDateFormat = getDateFormatString(this.locale);
 
     if (this.activities) {
+      this.allFilters = this.getSearchableFieldValues(this.activities).map(
+        (label) => {
+          return { label, id: label, type: 'tag' };
+        }
+      );
+
       this.dataSource = new MatTableDataSource(this.activities);
       this.dataSource.filterPredicate = (data, filter) => {
         const dataString = this.getFilterableValues(data)
@@ -164,8 +124,8 @@ export class ActivitiesTableComponent implements OnChanges, OnDestroy {
         return contains;
       };
       this.dataSource.sort = this.sort;
-      this.updateFilter();
-      this.isLoading = false;
+
+      this.updateFilters();
     }
   }
 
@@ -193,17 +153,27 @@ export class ActivitiesTableComponent implements OnChanges, OnDestroy {
     }
   }
 
+  public onExportDraft(aActivityId: string) {
+    this.exportDrafts.emit([aActivityId]);
+  }
+
+  public onExportDrafts() {
+    this.exportDrafts.emit(
+      this.dataSource.filteredData
+        .filter((activity) => {
+          return activity.isDraft;
+        })
+        .map((activity) => {
+          return activity.id;
+        })
+    );
+  }
+
   public onImport() {
     this.import.emit();
   }
 
-  public onOpenPositionDialog({
-    dataSource,
-    symbol
-  }: {
-    dataSource: DataSource;
-    symbol: string;
-  }): void {
+  public onOpenPositionDialog({ dataSource, symbol }: UniqueAsset): void {
     this.router.navigate([], {
       queryParams: { dataSource, symbol, positionDetailDialog: true }
     });
@@ -218,25 +188,24 @@ export class ActivitiesTableComponent implements OnChanges, OnDestroy {
     this.unsubscribeSubject.complete();
   }
 
-  private updateFilter() {
-    this.dataSource.filter = this.searchKeywords.join(SEARCH_STRING_SEPARATOR);
-    const lowercaseSearchKeywords = this.searchKeywords.map((keyword) =>
-      keyword.trim().toLowerCase()
-    );
+  private getFilterableValues(
+    activity: OrderWithAccount,
+    fieldValues: Set<string> = new Set<string>()
+  ): string[] {
+    fieldValues.add(activity.Account?.name);
+    fieldValues.add(activity.Account?.Platform?.name);
+    fieldValues.add(activity.SymbolProfile.currency);
 
-    this.placeholder =
-      lowercaseSearchKeywords.length <= 0 ? SEARCH_PLACEHOLDER : '';
+    if (!isUUID(activity.SymbolProfile.symbol)) {
+      fieldValues.add(activity.SymbolProfile.symbol);
+    }
 
-    this.allFilters = this.getSearchableFieldValues(this.activities).filter(
-      (item) => {
-        return !lowercaseSearchKeywords.includes(item.trim().toLowerCase());
-      }
-    );
+    fieldValues.add(activity.type);
+    fieldValues.add(format(activity.date, 'yyyy'));
 
-    this.filters$.next(this.allFilters);
-
-    this.totalFees = this.getTotalFees();
-    this.totalValue = this.getTotalValue();
+    return [...fieldValues].filter((item) => {
+      return item !== undefined;
+    });
   }
 
   private getSearchableFieldValues(activities: OrderWithAccount[]): string[] {
@@ -267,22 +236,6 @@ export class ActivitiesTableComponent implements OnChanges, OnDestroy {
       });
   }
 
-  private getFilterableValues(
-    activity: OrderWithAccount,
-    fieldValues: Set<string> = new Set<string>()
-  ): string[] {
-    fieldValues.add(activity.currency);
-    fieldValues.add(activity.symbol);
-    fieldValues.add(activity.type);
-    fieldValues.add(activity.Account?.name);
-    fieldValues.add(activity.Account?.Platform?.name);
-    fieldValues.add(format(activity.date, 'yyyy'));
-
-    return [...fieldValues].filter((item) => {
-      return item !== undefined;
-    });
-  }
-
   private getTotalFees() {
     let totalFees = new Big(0);
 
@@ -302,10 +255,10 @@ export class ActivitiesTableComponent implements OnChanges, OnDestroy {
 
     for (const activity of this.dataSource.filteredData) {
       if (isNumber(activity.valueInBaseCurrency)) {
-        if (activity.type === 'BUY') {
+        if (activity.type === 'BUY' || activity.type === 'ITEM') {
           totalValue = totalValue.plus(activity.valueInBaseCurrency);
         } else if (activity.type === 'SELL') {
-          totalValue = totalValue.minus(activity.valueInBaseCurrency);
+          return null;
         }
       } else {
         return null;
@@ -313,5 +266,33 @@ export class ActivitiesTableComponent implements OnChanges, OnDestroy {
     }
 
     return totalValue.toNumber();
+  }
+
+  private updateFilters(filters: Filter[] = []) {
+    this.isLoading = true;
+
+    this.dataSource.filter = filters
+      .map((filter) => {
+        return filter.label;
+      })
+      .join(SEARCH_STRING_SEPARATOR);
+    const lowercaseSearchKeywords = filters.map((filter) => {
+      return filter.label.trim().toLowerCase();
+    });
+
+    this.placeholder =
+      lowercaseSearchKeywords.length <= 0 ? SEARCH_PLACEHOLDER : '';
+
+    this.searchKeywords = filters.map((filter) => {
+      return filter.label;
+    });
+
+    this.hasDrafts = this.dataSource.filteredData.some((activity) => {
+      return activity.isDraft === true;
+    });
+    this.totalFees = this.getTotalFees();
+    this.totalValue = this.getTotalValue();
+
+    this.isLoading = false;
   }
 }

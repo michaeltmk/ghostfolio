@@ -4,8 +4,7 @@ import {
   Input,
   OnChanges
 } from '@angular/core';
-import { DEFAULT_DATE_FORMAT } from '@ghostfolio/common/config';
-import { format, isDate } from 'date-fns';
+import { getLocale } from '@ghostfolio/common/helper';
 import { isNumber } from 'lodash';
 
 @Component({
@@ -17,20 +16,22 @@ import { isNumber } from 'lodash';
 export class ValueComponent implements OnChanges {
   @Input() colorizeSign = false;
   @Input() currency = '';
+  @Input() isAbsolute = false;
   @Input() isCurrency = false;
+  @Input() isDate = false;
   @Input() isPercent = false;
   @Input() label = '';
-  @Input() locale = '';
+  @Input() locale = getLocale();
   @Input() position = '';
   @Input() precision: number | undefined;
   @Input() size: 'large' | 'medium' | 'small' = 'small';
+  @Input() subLabel = '';
   @Input() value: number | string = '';
 
   public absoluteValue = 0;
-  public formattedDate = '';
   public formattedValue = '';
-  public isDate = false;
   public isNumber = false;
+  public isString = false;
   public useAbsoluteValue = false;
 
   public constructor() {}
@@ -38,8 +39,8 @@ export class ValueComponent implements OnChanges {
   public ngOnChanges() {
     if (this.value || this.value === 0) {
       if (isNumber(this.value)) {
-        this.isDate = false;
         this.isNumber = true;
+        this.isString = false;
         this.absoluteValue = Math.abs(<number>this.value);
 
         if (this.colorizeSign) {
@@ -91,18 +92,27 @@ export class ValueComponent implements OnChanges {
         } else {
           this.formattedValue = this.value?.toString();
         }
-      } else {
-        try {
-          if (isDate(new Date(this.value))) {
-            this.isDate = true;
-            this.isNumber = false;
 
-            this.formattedDate = format(
-              new Date(<string>this.value),
-              DEFAULT_DATE_FORMAT
-            );
-          }
-        } catch {}
+        if (this.isAbsolute) {
+          // Remove algebraic sign
+          this.formattedValue = this.formattedValue.replace(/^-/, '');
+        }
+      } else {
+        this.isNumber = false;
+        this.isString = true;
+
+        if (this.isDate) {
+          this.formattedValue = new Date(<string>this.value).toLocaleDateString(
+            this.locale,
+            {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric'
+            }
+          );
+        } else {
+          this.formattedValue = this.value;
+        }
       }
     }
 

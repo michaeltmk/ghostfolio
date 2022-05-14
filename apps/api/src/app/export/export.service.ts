@@ -14,12 +14,10 @@ export class ExportService {
     activityIds?: string[];
     userId: string;
   }): Promise<Export> {
-    let orders = await this.prismaService.order.findMany({
+    let activities = await this.prismaService.order.findMany({
       orderBy: { date: 'desc' },
       select: {
         accountId: true,
-        currency: true,
-        dataSource: true,
         date: true,
         fee: true,
         id: true,
@@ -32,19 +30,19 @@ export class ExportService {
     });
 
     if (activityIds) {
-      orders = orders.filter((order) => {
-        return activityIds.includes(order.id);
+      activities = activities.filter((activity) => {
+        return activityIds.includes(activity.id);
       });
     }
 
     return {
       meta: { date: new Date().toISOString(), version: environment.version },
-      orders: orders.map(
+      activities: activities.map(
         ({
           accountId,
-          currency,
           date,
           fee,
+          id,
           quantity,
           SymbolProfile,
           type,
@@ -52,14 +50,15 @@ export class ExportService {
         }) => {
           return {
             accountId,
-            currency,
-            date,
             fee,
+            id,
             quantity,
             type,
             unitPrice,
+            currency: SymbolProfile.currency,
             dataSource: SymbolProfile.dataSource,
-            symbol: SymbolProfile.symbol
+            date: date.toISOString(),
+            symbol: type === 'ITEM' ? SymbolProfile.name : SymbolProfile.symbol
           };
         }
       )
