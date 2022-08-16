@@ -1,4 +1,4 @@
-FROM node:14-alpine as builder
+FROM node:lts as builder
 
 # Build application and add additional files
 
@@ -12,8 +12,8 @@ COPY ./package.json package.json
 COPY ./yarn.lock yarn.lock
 COPY ./prisma/schema.prisma prisma/schema.prisma
 
-RUN apk add --no-cache python3 g++ make openssl
-RUN yarn install
+RUN apt install python3 g++ make openssl
+RUN yarn install --latest --network-timeout 1000000
 
 # See https://github.com/nrwl/nx/issues/6586 for further details
 COPY ./decorate-angular-cli.js decorate-angular-cli.js
@@ -45,7 +45,7 @@ COPY package.json /ghostfolio/dist/apps/api
 RUN yarn database:generate-typings
 
 # Image to run, copy everything needed from builder
-FROM node:14-alpine
+FROM node:lts
 COPY --from=builder /ghostfolio/dist/apps /ghostfolio/apps
 WORKDIR /ghostfolio/apps/api
 EXPOSE 3333
